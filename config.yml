@@ -1,0 +1,35 @@
+# Cut a 192 frame T
+# Questo modello usa norm dopo la somma con residual, in piu prima del positional encoding usa normalization.
+
+log_dir: "Models/Sad-Unet-CycleGan-2d1d2dUNet-1"
+save_freq: 20
+device: "cuda:0"
+
+dataset_maker:
+  dataset_output_dir: "Data/"
+
+dataset_configuration:
+  do_dtw: True
+  data_separetor: ","
+  data_header: ["source_path","reference_path"]
+  training_set_path: "Data/training.txt"
+  validation_set_path: "Data/validation.txt"
+
+preprocess_params:
+  sr: 24000
+  spect_params:
+    n_fft: 2048
+    win_length: 1200
+    hop_length: 300
+    mel_fmin: 0.0
+    mel_fmax: 8000.0
+    n_mel_band: 80
+
+training_parameter: 
+  learning_rate: 0.0002
+  weight_decay: 0.0001
+  epochs: 100
+  batch_size: 1
+  dropout: 0.
+  lambda_cycle: 10
+  lambda_identity: 3
