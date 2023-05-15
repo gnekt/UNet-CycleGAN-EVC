@@ -72,7 +72,7 @@ def generate_wav_tensor(wave_path: str) -> torch.Tensor:
         print("ds")
     return wave_tensor
 
-in_datta = load_data("../StarGANv2-EmotionalVC/dataset/eng/ESD/0020/Neutral/0020_000190.wav")
+in_datta = load_data("../StarGANv2-EmotionalVC/dataset/eng/ESD/0011/Neutral/0011_000228.wav")
 
 generator.eval()
 generator.to(DEVICE)

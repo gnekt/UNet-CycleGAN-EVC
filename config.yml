@@ -9,7 +9,6 @@ dataset_maker:
   dataset_output_dir: "Data/"
 
 dataset_configuration:
-  do_dtw: True
   data_separetor: ","
   data_header: ["source_path","reference_path"]
   training_set_path: "Data/training.txt"

@@ -6,11 +6,9 @@ import torch
 import soundfile as sf
 import torchaudio
 import tqdm
-from sklearn.preprocessing import MinMaxScaler
 from pickle import dump
 
-scaler = MinMaxScaler()
-# Do NOT TOUCH
+######################################## Do NOT TOUCH
 config = yaml.safe_load(open("Configs/config.yml"))
 MEL_PARAMS = config.get('preprocess_params', {})
 np.random.seed(1)
@@ -22,6 +20,7 @@ MEL_PARAMS = {
     "win_length": MEL_PARAMS["spect_params"]["win_length"],
     "hop_length": MEL_PARAMS["spect_params"]["hop_length"]
 }
+to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
 ###########################################################
 
 def _generate_wav_tensor(wave_path: str) -> torch.Tensor:
@@ -38,7 +37,7 @@ def _generate_wav_tensor(wave_path: str) -> torch.Tensor:
             print("ds")
         return wave_tensor
 
-to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
+
 def load_data(wav_path: str) -> torch.Tensor:
         """Produce mel-spectrogram given a wav file
         Args:
@@ -51,15 +50,13 @@ def load_data(wav_path: str) -> torch.Tensor:
         return torch.log(1e-5 + to_melspec(wave_tensor))
     
 # Define stream 
-dataframe = pd.read_csv("dataset/dataset.csv", sep=";")
+dataframe = pd.read_csv("dataset/dataset.csv", sep=";").sample(frac=1)
 
 mel_band = torch.Tensor()
 
-for index,row in tqdm.tqdm(dataframe[:2000].iterrows()):
+for index,row in tqdm.tqdm(dataframe[:8000].iterrows()):
     tensor = load_data(row["path"]).transpose(1, 0)
     mel_band = torch.cat((mel_band, tensor)) 
-
-print(scaler.fit(mel_band))
 
 std, mean = torch.std_mean(mel_band,0)
 

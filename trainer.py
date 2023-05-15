@@ -1,11 +1,11 @@
 import os
 import os.path as osp
+from typing import Dict
 import yaml
 import shutil
 import torch
 import warnings
 
-from loss import PerceptualLoss
 warnings.simplefilter('ignore')
 import wandb
 from munch import Munch
@@ -22,8 +22,8 @@ def train(config_path, num_worker):
     if not osp.exists(log_dir): os.makedirs(log_dir, exist_ok=True)
     shutil.copy(config_path, osp.join(log_dir, osp.basename(config_path)))
 
-    training_parameter = Munch(config.get("training_parameter"))
     ### Get configuration
+    training_parameter = Munch(config.get("training_parameter"))
     batch_size = training_parameter['batch_size']
     device = config.get('device', 'cuda:0')
     epochs = training_parameter['epochs']
@@ -47,24 +47,28 @@ def train(config_path, num_worker):
                                         validation=True)
     
     # Generator Definition
+    # n_to_e: Neutral to Emotional
+    # e_to_n: Emotional to Neutral
     generators = {
         "n_to_e": UNet(),
         "e_to_n": UNet()
     }
     _ = [generator.to(device) for generator in generators.values()]
     
+    # Generator optimizer Definition
     gen_optimizers = {
         "n_to_e": torch.optim.Adam(generators["n_to_e"].parameters(), lr=0.0002, weight_decay=1e-4, betas=(0.5, 0.999)),
         "e_to_n": torch.optim.Adam(generators["e_to_n"].parameters(), lr=0.0002, weight_decay=1e-4, betas=(0.5, 0.999)),
     }
 
-    # ADV Direct Discriminator Definition
+    # Discriminator Definition
     discriminators = {
         "neutral": Discriminator(),
         "emotional": Discriminator()
     }
     _ = [discriminator.to(device) for discriminator in discriminators.values()]
 
+    # Discriminator optimizer Definition
     dis_optimizers = {
         "neutral": torch.optim.Adam(discriminators["neutral"].parameters(), lr=0.0001),
         "emotional": torch.optim.Adam(discriminators["emotional"].parameters(), lr=0.0001),
@@ -86,7 +90,10 @@ def train(config_path, num_worker):
             gen_optimizers[key].load_state_dict(value)
         for key, value in checkpoint["dis_optimizers"].items():
             dis_optimizers[key].load_state_dict(value)
-        
+    
+    # Scheduler Definition
+    
+    # # lambda definition
     make_scheduler = lambda optimizer: torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=3e-4,
@@ -95,6 +102,8 @@ def train(config_path, num_worker):
         pct_start=0.0,
         div_factor=1,
         final_div_factor=1)
+    
+    # # Initialization
     schedulers = {
         "n_to_e": make_scheduler(gen_optimizers["n_to_e"]),
         "e_to_n": make_scheduler(gen_optimizers["e_to_n"]),
@@ -104,11 +113,17 @@ def train(config_path, num_worker):
     for epoch in range(start_epoch, epochs):
         loss_training = {}
         loss_validation = {}
-            
+        
+        # Each batch is composed of 4 tensors:
+        # 1. Neutral Mel-Spectrogram
+        # 2. Emotional Mel-Spectrogram
+        # 3. Neutral Mel-Spectrogram Padding Mask
+        # 4. Emotional Mel-Spectrogram Padding Mask
+        
         # Train
         for _, batch in enumerate(tqdm(train_dataloader, desc="[train]"), 1):
             batch = [b.to(device) for b in batch]
-            losses = train_epoch(batch, generators, discriminators, gen_optimizers, dis_optimizers, device, epoch)
+            losses = batch_train(batch, generators, discriminators, gen_optimizers, dis_optimizers)
             for key, value in losses.items():
                 if key not in loss_training.keys():
                     loss_training[key] = value
@@ -118,7 +133,7 @@ def train(config_path, num_worker):
         # Validation    
         for _, batch in enumerate(tqdm(val_dataloader, desc="[validation]"), 1):
             batch = [b.to(device) for b in batch]
-            losses = eval_epoch(batch, generators, discriminators, device, epoch)
+            losses = batch_eval(batch, generators, discriminators)
             for key, value in losses.items():
                 if key not in loss_validation.keys():
                     loss_validation[key] = value
@@ -136,33 +151,37 @@ def train(config_path, num_worker):
         if (epoch % save_freq) == 0:
             save_checkpoint(osp.join(log_dir, f'{epoch}.pth'), generators, discriminators, gen_optimizers, dis_optimizers, epoch, best_val_loss)
         
-def train_epoch(batch, generators, discriminators, gen_optimizers, dis_optimizers, device, epoch) -> float:
-    """Function that perform a training step on the given batch
+def batch_train(batch: tuple, generators: Dict[str, UNet], discriminators: Dict[str,Discriminator], gen_optimizers: Dict[str, torch.optim.Adam], dis_optimizers: Dict[str, torch.optim.Adam]) -> float:
+    """_summary_
 
     Args:
-        batch (List[__get_item__]): Sample batch.
-        model (torch.nn.Module): Model.
-        loss (torch.nn.SmoothL1Loss): Loss associated.
-        optimizer (torch.optim.Optimizer): Optimizer associated.
+        batch (tuple): _description_
+        generators (Dict[str, UNet]): _description_
+        discriminators (Dict[str,Discriminator]): _description_
+        gen_optimizers (Dict[str, torch.optim.Adam]): _description_
+        dis_optimizers (Dict[str, torch.optim.Adam]): _description_
 
     Returns:
-        float: Loss value
-    """   
+        float: _description_
+    """    
     _ = [generator.train() for generator in generators.values()]
     _ = [discriminator.train() for discriminator in discriminators.values()]
 
     real_neutral, real_emotional, real_neutral_padding_mask, real_emotional_padding_mask = batch
     
+    # Reshape padding mask to fit the shape of the mel-spectrogram
+    # (batch_size, T_Mel) -> (batch_size, MelBand, T_Mel
     real_neutral_padding_mask = real_neutral_padding_mask.unsqueeze(1).repeat(1, real_neutral.size(2), 1)
     real_emotional_padding_mask = real_emotional_padding_mask.unsqueeze(1).repeat(1, real_emotional.size(2), 1)
-        
+    
+    # Set Lambda Loss
     lambda_lcyc = 10
     lambda_lid = 3
     loss_collector = {}
-        
+    
+    # Generate fake samples
     generated_emotional = generators["n_to_e"](real_neutral)
     generated_neutral = generators["e_to_n"](real_emotional)
-    
     
     # Direct Discriminator ############################################## 
     _ = [dis_optimizer.zero_grad() for dis_optimizer in dis_optimizers.values()]
@@ -233,7 +252,7 @@ def train_epoch(batch, generators, discriminators, gen_optimizers, dis_optimizer
     
     return loss_collector
     
-def eval_epoch(batch, generators, discriminators, device, epoch) -> float:
+def batch_eval(batch, generators, discriminators) -> float:
     """Function that perform an evaluation step on the given batch 
 
     Args:
@@ -332,11 +351,23 @@ def save_checkpoint(checkpoint_path: str, generators, discriminators, gen_optimi
             "n_to_e": generators["n_to_e"].state_dict(),
             "e_to_n": generators["e_to_n"].state_dict(),
         },
+        "gen_optimizers": {
+            "n_to_e": gen_optimizers["n_to_e"].state_dict(),
+            "e_to_n": gen_optimizers["e_to_n"].state_dict(),
+        },
+        "discriminators": {
+            "neutral": discriminators["neutral"].state_dict(),
+            "emotional": discriminators["emotional"].state_dict(),
+        },
+        "dis_optimizers": {
+            "neutral": dis_optimizers["neutral"].state_dict(),
+            "emotional": dis_optimizers["emotional"].state_dict(),
+        },
         "reached_epoch": epoch,
         "loss": actual_loss,
     }
     
-    if not os.path.exists(os.path.dirname(checkpoint_path)):
-        os.makedirs(os.path.dirname(checkpoint_path))
-    torch.save(state_dict, checkpoint_path)
+    # if not os.path.exists(os.path.dirname(checkpoint_path)):
+    #     os.makedirs(os.path.dirname(checkpoint_path))
+    # torch.save(state_dict, checkpoint_path)
 

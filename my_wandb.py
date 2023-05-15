@@ -27,26 +27,26 @@ if __name__ == "__main__":
     log_dir = config['log_dir']
     
 
-    wandb.init(
-            # set the wandb project where this run will be logged
-            project="Sad-UnetCycleGan-2d1d2dUnet",
-            # track hyperparameters and run metadata
-            config={
-            "learning_rate": config.training_parameter["learning_rate"],
-            "weight_decay": config.training_parameter["weight_decay"],
-            "architecture": config.log_dir.split("/")[-1],
-            "dataset": "SadConversion",
-            "epochs": config.training_parameter["epochs"],
-            "batch_size": config.training_parameter["batch_size"],
-            "dropout": config.training_parameter["dropout"],
-            "sampling":"Half,Half,Half",
-            "kernel_size": "(3,3),(3,3),(3,3)",
-            "seq_len": 192,
-            "features_map": "64,128,256",
-            "lambda_identity": config.training_parameter["lambda_identity"],
-            "lambda_cycle": config.training_parameter["lambda_cycle"]
-            }
-        )
+    # wandb.init(
+    #         # set the wandb project where this run will be logged
+    #         project="Sad-UnetCycleGan-2d1d2dUnet",
+    #         # track hyperparameters and run metadata
+    #         config={
+    #         "learning_rate": config.training_parameter["learning_rate"],
+    #         "weight_decay": config.training_parameter["weight_decay"],
+    #         "architecture": config.log_dir.split("/")[-1],
+    #         "dataset": "SadConversion",
+    #         "epochs": config.training_parameter["epochs"],
+    #         "batch_size": config.training_parameter["batch_size"],
+    #         "dropout": config.training_parameter["dropout"],
+    #         "sampling":"Half,Half,Half",
+    #         "kernel_size": "(3,3),(3,3),(3,3)",
+    #         "seq_len": 192,
+    #         "features_map": "64,128,256",
+    #         "lambda_identity": config.training_parameter["lambda_identity"],
+    #         "lambda_cycle": config.training_parameter["lambda_cycle"]
+    #         }
+    #     )
     # initialize wandb
     # start a new wandb run to track this script
     
